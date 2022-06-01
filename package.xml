@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>psmm</name>
+  <name>psmm_drive</name>
   <version>0.0.0</version>
-  <description>The psmm package</description>
+  <description>The psmm_drive package</description>
 
   <maintainer email="sasm@todo.todo">sasm</maintainer>
 

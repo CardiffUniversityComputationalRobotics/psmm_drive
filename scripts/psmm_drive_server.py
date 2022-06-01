@@ -10,7 +10,7 @@ import tf
 import numpy as np
 import math
 import actionlib
-from psmm.msg import (
+from psmm_drive.msg import (
     PSMMDriveFeedback,
     PSMMDriveResult,
     PSMMDriveAction,
@@ -32,7 +32,7 @@ class PSMMDriveAction(object):
 
         self.xy_tolerance = 1
 
-        self._action_name = "psmm_node"
+        self._action_name = "psmm_drive_node"
 
         self.move_base_client = actionlib.SimpleActionClient(
             "move_base", MoveBaseAction
