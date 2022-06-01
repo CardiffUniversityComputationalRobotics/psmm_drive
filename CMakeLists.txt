@@ -7,6 +7,7 @@ add_compile_options(-std=c++11)
 find_package(catkin REQUIRED COMPONENTS
   rospy
   std_msgs
+  sfm_diff_drive
 )
 
 catkin_package(

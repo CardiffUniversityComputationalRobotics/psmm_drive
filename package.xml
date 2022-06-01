@@ -19,6 +19,14 @@
   <exec_depend>std_msgs</exec_depend>
 
 
+  <!-- sfm drive messages -->
+
+  <build_depend>sfm_diff_drive</build_depend>
+  <exec_depend>sfm_diff_drive</exec_depend>
+
+
+
+
   <!-- The export tag contains other, unspecified, tags -->
   <export>
     <!-- Other tools can request additional information be placed here -->
