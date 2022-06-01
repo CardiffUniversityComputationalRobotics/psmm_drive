@@ -1,19 +1,14 @@
 #!/usr/bin/env python3
 import rospy
 
-from pedsim_msgs.msg import AgentStates, AgentGroups
+from pedsim_msgs.msg import AgentStates
 from nav_msgs.msg import Odometry
-from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Twist
-from tf import TransformListener
-import tf
 import numpy as np
 import math
 import actionlib
 from psmm_drive.msg import PSMMDriveActionGoal
 
-from move_base_msgs.msg import MoveBaseAction
-from actionlib_msgs.msg import GoalID
 from nav_msgs.msg import OccupancyGrid
 
 
@@ -29,6 +24,10 @@ class VODrive(object):
 
         # goal location
         self.goal = [0, 0, 0]
+
+        #! modifiable parameters
+        self.max_vel = 0.3
+        self.robot_radius = 0.35
 
         #! subcribers
 
@@ -104,8 +103,27 @@ class VODrive(object):
                     w_y = self.map_wy(map_origin_y, map_size_y, map_scale, j)
                     self.obstacles_pos.append([w_x, w_y])
 
+    #! computing functions
+    def compute_des_vel(self):
+        v_des = [0, 0, 0]
+        goal_vec = self.goal - self.robot_position
+        norm = np.sqrt(np.power(goal_vec[0], 2) + np.power(goal_vec[1], 2))
+        if norm < 0.25:
+            v_des = [0, 0, 0]
+        else:
+            vel_vec = self.max_vel * (goal_vec / norm)
+            v_des = [vel_vec[0], vel_vec[1], vel_vec[2]]
+        return v_des
+
+    def vo_velocity(self):
+        pass
+
+    def run(self):
+        while not rospy.is_shutdown():
+            pass
+
 
 if __name__ == "__main__":
     rospy.init_node("vo_node")
-    server = VODrive()
-    rospy.spin()
+    vo_node = VODrive()
+    vo_node.run()
