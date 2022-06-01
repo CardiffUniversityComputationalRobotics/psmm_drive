@@ -10,11 +10,8 @@ import tf
 import numpy as np
 import math
 import actionlib
-from sfm_diff_drive.msg import (
-    SFMDriveFeedback,
-    SFMDriveResult,
-    SFMDriveAction,
-)
+from psmm_drive.msg import PSMMDriveActionGoal
+
 from move_base_msgs.msg import MoveBaseAction
 from actionlib_msgs.msg import GoalID
 from nav_msgs.msg import OccupancyGrid
@@ -26,7 +23,19 @@ class VODrive(object):
         # initial variables
         self.agents_states_register = []
         self.robot_position = np.array([0, 0, 0], np.dtype("float64"))
+        self.robot_velocities = np.array([0, 0, 0], np.dtype("float64"))
+        self.robot_orientation = np.array([0, 0, 0, 0], np.dtype("float64"))
         self.obstacles_pos = []
+
+        # goal location
+        self.goal = [0, 0, 0]
+
+        #! subcribers
+
+        self.goal_location_sub = rospy.Subscriber(
+            "/psmm_drive_node/goal",
+            PSMMDriveActionGoal,
+        )
 
         self.agents_states_subs = rospy.Subscriber(
             "/pedsim_simulator/simulated_agents_overwritten",
@@ -44,30 +53,39 @@ class VODrive(object):
             "/projected_map", OccupancyGrid, self.obstacle_map_processing
         )
 
-    def agents_state_callback(self, data):
+        #! publishers
+        self.cmd_pub = rospy.Publisher("cmd_vel_vo", Twist, queue_size=10)
+
+    #! CALLBACKS
+
+    def goal_callback(self, goal: PSMMDriveActionGoal):
+        self.goal[0] = goal.goal.goal.x
+        self.goal[1] = goal.goal.goal.y
+        self.goal[2] = goal.goal.goal.z
+
+    def agents_state_callback(self, data: AgentStates):
         """
         callback para obtener lista de info de agentes
         """
         self.agents_states_register = data.agent_states
 
-    def robot_pos_callback(self, data):
+    def robot_pos_callback(self, data: Odometry):
         """
         callback para agarrar datos de posicion del robot
         """
-        data_position = data.pose.pose.position
-        self.robot_position = np.array(
-            [data_position.x, data_position.y, data_position.z], np.dtype("float64")
-        )
 
-        self.robot_orientation = np.array(
-            [
-                data.pose.pose.orientation.x,
-                data.pose.pose.orientation.y,
-                data.pose.pose.orientation.z,
-                data.pose.pose.orientation.w,
-            ],
-            np.dtype("float64"),
-        )
+        self.robot_position[0] = data.pose.pose.position.x
+        self.robot_position[1] = data.pose.pose.position.y
+        self.robot_position[2] = data.pose.pose.position.z
+
+        self.robot_orientation[0] = data.pose.pose.orientation.x
+        self.robot_orientation[1] = data.pose.pose.orientation.y
+        self.robot_orientation[2] = data.pose.pose.orientation.z
+        self.robot_orientation[3] = data.pose.pose.orientation.w
+
+        self.robot_velocities[0] = data.twist.twist.linear.x
+        self.robot_velocities[1] = data.twist.twist.linear.y
+        self.robot_velocities[2] = 0
 
     def obstacle_map_processing(self, data):
 

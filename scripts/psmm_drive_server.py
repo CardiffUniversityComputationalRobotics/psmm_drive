@@ -10,10 +10,10 @@ import tf
 import numpy as np
 import math
 import actionlib
-from sfm_diff_drive.msg import (
-    SFMDriveFeedback,
-    SFMDriveResult,
-    SFMDriveAction,
+from psmm.msg import (
+    PSMMDriveFeedback,
+    PSMMDriveResult,
+    PSMMDriveAction,
 )
 from move_base_msgs.msg import MoveBaseAction
 from actionlib_msgs.msg import GoalID
@@ -22,8 +22,8 @@ from nav_msgs.msg import OccupancyGrid
 
 class PSMMDriveAction(object):
 
-    _feedback = SFMDriveFeedback()
-    _result = SFMDriveResult()
+    _feedback = PSMMDriveFeedback()
+    _result = PSMMDriveResult()
 
     def __init__(self):
 
@@ -83,7 +83,7 @@ class PSMMDriveAction(object):
 
         self._as = actionlib.SimpleActionServer(
             self._action_name,
-            SFMDriveAction,
+            PSMMDriveAction,
             execute_cb=self.execute_cb,
             auto_start=False,
         )
@@ -545,6 +545,6 @@ def angle(v1, v2):
 
 
 if __name__ == "__main__":
-    rospy.init_node("sfm_drive_node")
+    rospy.init_node("psmm_drive_node")
     server = PSMMDriveAction()
     rospy.spin()
