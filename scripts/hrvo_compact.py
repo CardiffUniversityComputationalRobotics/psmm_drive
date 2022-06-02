@@ -54,8 +54,8 @@ def intersect(pA, vA, RVO_BA_all):
     norm_v = distance(vA, [0, 0])
     suitable_V = []
     unsuitable_V = []
-    for theta in numpy.arange(0, 2 * PI, 0.1):
-        for rad in numpy.arange(0.02, norm_v + 0.02, norm_v / 5.0):
+    for theta in np.arange(0, 2 * PI, 0.1):
+        for rad in np.arange(0.02, norm_v + 0.02, norm_v / 5.0):
             new_v = [rad * cos(theta), rad * sin(theta)]
             suit = True
             for RVO_BA in RVO_BA_all:
