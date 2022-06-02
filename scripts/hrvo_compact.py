@@ -5,8 +5,6 @@ from pedsim_msgs.msg import AgentStates
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist
 import numpy as np
-import math
-import actionlib
 from psmm_drive.msg import PSMMDriveActionGoal
 
 from nav_msgs.msg import OccupancyGrid
@@ -184,7 +182,7 @@ class VODrive(object):
         )
 
         #! publishers
-        self.vo_cmd_vel_pub = rospy.Publisher("cmd_vel_vo", Twist, queue_size=10)
+        self.vo_cmd_vel_pub = rospy.Publisher("cmd_vel_hrvo", Twist, queue_size=10)
 
     #! CALLBACKS
 
@@ -251,10 +249,9 @@ class VODrive(object):
         pA = [self.robot_position[0], self.robot_position[1]]
         RVO_BA_all = []
 
-        for obstacle_pos in self.obstacles_pos:
-            vB = [0, 0]
-            pB = obstacle_pos
-            transl_vB_vA = [pA[0] + vB[0], pA[1] + vB[1]]
+        for agent in self.agents_states_register:
+            vB = [agent.twist.linear.x, agent.twist.linear.y]
+            pB = [agent.pose.position.x, agent.pose.position.y]
             dist_BA = distance(pA, pB)
             theta_BA = atan2(pB[1] - pA[1], pB[0] - pA[0])
             if 2 * self.robot_radius > dist_BA:
@@ -264,6 +261,11 @@ class VODrive(object):
             bound_left = [cos(theta_ort_left), sin(theta_ort_left)]
             theta_ort_right = theta_BA - theta_BAort
             bound_right = [cos(theta_ort_right), sin(theta_ort_right)]
+            dist_dif = distance([0.5 * (vB[0] - vA[0]), 0.5 * (vB[1] - vA[1])], [0, 0])
+            transl_vB_vA = [
+                pA[0] + vB[0] + cos(theta_ort_left) * dist_dif,
+                pA[1] + vB[1] + sin(theta_ort_left) * dist_dif,
+            ]
             RVO_BA = [
                 transl_vB_vA,
                 bound_left,
@@ -273,30 +275,30 @@ class VODrive(object):
             ]
             RVO_BA_all.append(RVO_BA)
 
-        # for obstacle_pos in self.obstacles_pos:
-        #     vB = [0, 0]
-        #     pB = obstacle_pos
-        #     transl_vB_vA = [pA[0] + vB[0], pA[1] + vB[1]]
-        #     dist_BA = distance(pA, pB)
-        #     theta_BA = atan2(pB[1] - pA[1], pB[0] - pA[0])
-        #     # over-approximation of square to circular
-        #     OVER_APPROX_C2S = 1.5
-        #     rad = self.obstacle_radius * OVER_APPROX_C2S
-        #     if (rad + self.robot_radius) > dist_BA:
-        #         dist_BA = rad + self.robot_radius
-        #     theta_BAort = asin((rad + self.robot_radius) / dist_BA)
-        #     theta_ort_left = theta_BA + theta_BAort
-        #     bound_left = [cos(theta_ort_left), sin(theta_ort_left)]
-        #     theta_ort_right = theta_BA - theta_BAort
-        #     bound_right = [cos(theta_ort_right), sin(theta_ort_right)]
-        #     RVO_BA = [
-        #         transl_vB_vA,
-        #         bound_left,
-        #         bound_right,
-        #         dist_BA,
-        #         rad + self.agent_radius,
-        #     ]
-        #     RVO_BA_all.append(RVO_BA)
+        for obstacle_pos in self.obstacles_pos:
+            vB = [0, 0]
+            pB = obstacle_pos
+            transl_vB_vA = [pA[0] + vB[0], pA[1] + vB[1]]
+            dist_BA = distance(pA, pB)
+            theta_BA = atan2(pB[1] - pA[1], pB[0] - pA[0])
+            # over-approximation of square to circular
+            OVER_APPROX_C2S = 1.5
+            rad = self.obstacle_radius * OVER_APPROX_C2S
+            if (rad + self.robot_radius) > dist_BA:
+                dist_BA = rad + self.robot_radius
+            theta_BAort = asin((rad + self.robot_radius) / dist_BA)
+            theta_ort_left = theta_BA + theta_BAort
+            bound_left = [cos(theta_ort_left), sin(theta_ort_left)]
+            theta_ort_right = theta_BA - theta_BAort
+            bound_right = [cos(theta_ort_right), sin(theta_ort_right)]
+            RVO_BA = [
+                transl_vB_vA,
+                bound_left,
+                bound_right,
+                dist_BA,
+                rad + self.agent_radius,
+            ]
+            RVO_BA_all.append(RVO_BA)
         vA_post = intersect(pA, self.compute_des_vel(), RVO_BA_all)
         return vA_post[:]
 

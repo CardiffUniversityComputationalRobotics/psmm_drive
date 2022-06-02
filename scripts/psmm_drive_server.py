@@ -49,6 +49,8 @@ class PSMMDriveAction(object):
         self.relaxation_time = 0.5
         self.laser_ranges = np.zeros(360)
 
+        self.hrvo_vel = np.array([0, 0, 0], np.dtype("float64"))
+
         self.walls_range = []
 
         # nearest obstacle
@@ -116,6 +118,10 @@ class PSMMDriveAction(object):
             "/projected_map", OccupancyGrid, self.obstacle_map_processing
         )
 
+        self.hrvo_subs = rospy.Subscriber(
+            "/cmd_vel_hrvo", Twist, self.obstacle_map_processing
+        )
+
         #! publishers
         self.velocity_pub = rospy.Publisher(self.cmd_vel_topic, Twist, queue_size=10)
 
@@ -139,6 +145,12 @@ class PSMMDriveAction(object):
         return False
 
     # * callbacks
+
+    # hrvo velocity
+
+    def hrvo_vel_cb(self, data: Twist):
+        self.hrvo_vel[0] = data.linear.x
+        self.hrvo_vel[1] = data.linear.y
 
     def execute_cb(self, goal):
         rospy.loginfo("Starting social drive")
@@ -346,15 +358,17 @@ class PSMMDriveAction(object):
         """
 
     def desired_force(self):
-        desired_direction = self.current_waypoint - self.robot_position
-        desired_direction_vec_norm = np.linalg.norm(desired_direction)
-        if desired_direction_vec_norm != 0:
-            norm_desired_direction = desired_direction / desired_direction_vec_norm
-        else:
-            norm_desired_direction = np.array([0, 0, 0], np.dtype("float64"))
-        desired_force = (
-            norm_desired_direction * self.robot_max_vel - self.robot_current_vel
-        ) / self.relaxation_time
+        # desired_direction = self.current_waypoint - self.robot_position
+        # desired_direction_vec_norm = np.linalg.norm(desired_direction)
+        # if desired_direction_vec_norm != 0:
+        #     norm_desired_direction = desired_direction / desired_direction_vec_norm
+        # else:
+        #     norm_desired_direction = np.array([0, 0, 0], np.dtype("float64"))
+        # desired_force = (
+        #     norm_desired_direction * self.robot_max_vel - self.robot_current_vel
+        # ) / self.relaxation_time
+
+        desired_force = (self.hrvo_vel - self.robot_current_vel) / self.relaxation_time
         return desired_force
 
     def obstacle_force_walls(self):
