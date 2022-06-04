@@ -150,7 +150,7 @@ class VODrive(object):
         self.vo_twist_msg = Twist()
 
         # goal location
-        self.goal = [0, 0, 0]
+        self.goal = [-12, 12.5, 0]
 
         #! modifiable parameters
         self.max_vel = 0.3
@@ -187,9 +187,10 @@ class VODrive(object):
     #! CALLBACKS
 
     def goal_callback(self, goal: PSMMDriveActionGoal):
-        self.goal[0] = goal.goal.goal.x
-        self.goal[1] = goal.goal.goal.y
-        self.goal[2] = goal.goal.goal.z
+        # self.goal[0] = goal.goal.goal.x
+        # self.goal[1] = goal.goal.goal.y
+        # self.goal[2] = goal.goal.goal.z
+        pass
 
     def agents_state_callback(self, data: AgentStates):
         """
@@ -231,6 +232,17 @@ class VODrive(object):
                     w_x = self.map_wx(map_origin_x, map_size_x, map_scale, i)
                     w_y = self.map_wy(map_origin_y, map_size_y, map_scale, j)
                     self.obstacles_pos.append([w_x, w_y])
+
+    def map_index(self, size_x, i, j):
+        return i + j * size_x
+
+    # define MAP_WXGX(map, i) (map.origin_x + (i - map.size_x / 2) * map.scale)
+
+    def map_wx(self, origin_x, size_x, scale, i):
+        return origin_x + (i - size_x / 2) * scale
+
+    def map_wy(self, origin_y, size_y, scale, j):
+        return origin_y + (j - size_y / 2) * scale
 
     #! computing functions
     def compute_des_vel(self):
@@ -305,6 +317,7 @@ class VODrive(object):
     def run(self):
         while not rospy.is_shutdown():
             self.vo_velocity_val = self.vo_velocity()
+            print(self.vo_velocity_val)
             self.vo_twist_msg.linear.x = self.vo_velocity_val[0]
             self.vo_twist_msg.linear.y = self.vo_velocity_val[1]
 

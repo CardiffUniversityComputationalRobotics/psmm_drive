@@ -10,20 +10,26 @@ import tf
 import numpy as np
 import math
 import actionlib
+
 from psmm_drive.msg import (
     PSMMDriveFeedback,
     PSMMDriveResult,
     PSMMDriveAction,
+)
+from sfm_diff_drive.msg import (
+    SFMDriveFeedback,
+    SFMDriveResult,
+    SFMDriveAction,
 )
 from move_base_msgs.msg import MoveBaseAction
 from actionlib_msgs.msg import GoalID
 from nav_msgs.msg import OccupancyGrid
 
 
-class PSMMDriveAction(object):
+class ProactiveSocialMotionModelDriveAction(object):
 
-    _feedback = PSMMDriveFeedback()
-    _result = PSMMDriveResult()
+    _feedback = SFMDriveFeedback()
+    _result = SFMDriveResult()
 
     def __init__(self):
 
@@ -33,10 +39,6 @@ class PSMMDriveAction(object):
         self.xy_tolerance = 1
 
         self._action_name = "psmm_drive_node"
-
-        self.move_base_client = actionlib.SimpleActionClient(
-            "move_base", MoveBaseAction
-        )
 
         self.agents_states_register = []
         self.agents_groups_register = []
@@ -91,6 +93,14 @@ class PSMMDriveAction(object):
         )
         self._as.start()
 
+        # self._as = actionlib.SimpleActionServer(
+        #     self._action_name,
+        #     SFMDriveAction,
+        #     execute_cb=self.execute_cb,
+        #     auto_start=False,
+        # )
+        # self._as.start()
+
         #! subscribers
         self.agents_states_subs = rospy.Subscriber(
             "/pedsim_simulator/simulated_agents_overwritten",
@@ -118,9 +128,7 @@ class PSMMDriveAction(object):
             "/projected_map", OccupancyGrid, self.obstacle_map_processing
         )
 
-        self.hrvo_subs = rospy.Subscriber(
-            "/cmd_vel_hrvo", Twist, self.obstacle_map_processing
-        )
+        self.hrvo_subs = rospy.Subscriber("/cmd_vel_hrvo", Twist, self.hrvo_vel_cb)
 
         #! publishers
         self.velocity_pub = rospy.Publisher(self.cmd_vel_topic, Twist, queue_size=10)
@@ -259,7 +267,7 @@ class PSMMDriveAction(object):
             self.velocity_pub.publish(cmd_vel_msg)
 
             self._feedback.feedback = "robot moving"
-            rospy.loginfo("robot_moving")
+            # rospy.loginfo("robot_moving")
             self._as.publish_feedback(self._feedback)
             r_sleep.sleep()
         cmd_vel_msg = Twist()
@@ -315,6 +323,17 @@ class PSMMDriveAction(object):
         self.nearest_obstacle[1] = cur_nearest_obs[1]
         # print("nearest_obstacle:", self.nearest_obstacle)
 
+    def map_index(self, size_x, i, j):
+        return i + j * size_x
+
+    # define MAP_WXGX(map, i) (map.origin_x + (i - map.size_x / 2) * map.scale)
+
+    def map_wx(self, origin_x, size_x, scale, i):
+        return origin_x + (i - size_x / 2) * scale
+
+    def map_wy(self, origin_y, size_y, scale, j):
+        return origin_y + (j - size_y / 2) * scale
+
     def laser_scan_callback(self, data):
         """
         callback para agarrar los datos del laser
@@ -369,6 +388,7 @@ class PSMMDriveAction(object):
         # ) / self.relaxation_time
 
         desired_force = (self.hrvo_vel - self.robot_current_vel) / self.relaxation_time
+        print(self.hrvo_vel)
         return desired_force
 
     def obstacle_force_walls(self):
@@ -560,5 +580,5 @@ def angle(v1, v2):
 
 if __name__ == "__main__":
     rospy.init_node("psmm_drive_node")
-    server = PSMMDriveAction()
+    server = ProactiveSocialMotionModelDriveAction()
     rospy.spin()
