@@ -174,9 +174,10 @@ class ProactiveSocialMotionModelDriveAction(object):
                 desired_complete_force + social_complete_force + obstacle_complete_force
             )
             print("#######################")
-            print("nearest_obstacle:", self.nearest_obstacle)
 
+            print("hrvo vel:", self.hrvo_vel)
             print("desired force:", desired_complete_force)
+            print("nearest_obstacle:", self.nearest_obstacle)
             print("obstacle force:", obstacle_complete_force)
             print("complete force:", complete_force)
 
@@ -297,8 +298,8 @@ class ProactiveSocialMotionModelDriveAction(object):
         # map_origin_x = 0 + (map_size_x / 2) * map_scale
         # map_origin_y = 0 + (map_size_y / 2) * map_scale
 
-        for j in range(0, map_size_y):
-            for i in range(0, map_size_x):
+        for j in range(0, map_size_y, 2):
+            for i in range(0, map_size_x, 2):
                 if data.data[self.map_index(map_size_x, i, j)] == 100:
                     w_x = self.map_wx(map_origin_x, map_size_x, map_scale, i)
                     w_y = self.map_wy(map_origin_y, map_size_y, map_scale, j)
