@@ -16,11 +16,7 @@ from psmm_drive.msg import (
     PSMMDriveResult,
     PSMMDriveAction,
 )
-from sfm_diff_drive.msg import (
-    SFMDriveFeedback,
-    SFMDriveResult,
-    SFMDriveAction,
-)
+
 from move_base_msgs.msg import MoveBaseAction
 from actionlib_msgs.msg import GoalID
 from nav_msgs.msg import OccupancyGrid
@@ -28,8 +24,8 @@ from nav_msgs.msg import OccupancyGrid
 
 class ProactiveSocialMotionModelDriveAction(object):
 
-    _feedback = SFMDriveFeedback()
-    _result = SFMDriveResult()
+    _feedback = PSMMDriveFeedback()
+    _result = PSMMDriveResult()
 
     def __init__(self):
 
@@ -92,14 +88,6 @@ class ProactiveSocialMotionModelDriveAction(object):
             auto_start=False,
         )
         self._as.start()
-
-        # self._as = actionlib.SimpleActionServer(
-        #     self._action_name,
-        #     SFMDriveAction,
-        #     execute_cb=self.execute_cb,
-        #     auto_start=False,
-        # )
-        # self._as.start()
 
         #! subscribers
         self.agents_states_subs = rospy.Subscriber(
@@ -185,8 +173,12 @@ class ProactiveSocialMotionModelDriveAction(object):
             complete_force = (
                 desired_complete_force + social_complete_force + obstacle_complete_force
             )
+            print("#######################")
+            print("nearest_obstacle:", self.nearest_obstacle)
 
-            # print("complete force:", complete_force)
+            print("desired force:", desired_complete_force)
+            print("obstacle force:", obstacle_complete_force)
+            print("complete force:", complete_force)
 
             # time.sleep(1)
 
@@ -321,7 +313,7 @@ class ProactiveSocialMotionModelDriveAction(object):
 
         self.nearest_obstacle[0] = cur_nearest_obs[0]
         self.nearest_obstacle[1] = cur_nearest_obs[1]
-        # print("nearest_obstacle:", self.nearest_obstacle)
+        print("nearest_obstacle:", self.nearest_obstacle)
 
     def map_index(self, size_x, i, j):
         return i + j * size_x
@@ -377,18 +369,8 @@ class ProactiveSocialMotionModelDriveAction(object):
         """
 
     def desired_force(self):
-        # desired_direction = self.current_waypoint - self.robot_position
-        # desired_direction_vec_norm = np.linalg.norm(desired_direction)
-        # if desired_direction_vec_norm != 0:
-        #     norm_desired_direction = desired_direction / desired_direction_vec_norm
-        # else:
-        #     norm_desired_direction = np.array([0, 0, 0], np.dtype("float64"))
-        # desired_force = (
-        #     norm_desired_direction * self.robot_max_vel - self.robot_current_vel
-        # ) / self.relaxation_time
 
         desired_force = (self.hrvo_vel - self.robot_current_vel) / self.relaxation_time
-        print(self.hrvo_vel)
         return desired_force
 
     def obstacle_force_walls(self):
@@ -401,11 +383,11 @@ class ProactiveSocialMotionModelDriveAction(object):
             + np.power(self.nearest_obstacle[1] - self.robot_position[1], 2)
         )
 
-        self.nearest_obstacle = self.robot_position - self.nearest_obstacle
+        nearest_obstacle_temp = self.robot_position - self.nearest_obstacle
 
-        obstacle_vec_norm = np.linalg.norm(self.nearest_obstacle)
+        obstacle_vec_norm = np.linalg.norm(nearest_obstacle_temp)
         if obstacle_vec_norm != 0:
-            norm_obstacle_direction = self.nearest_obstacle / obstacle_vec_norm
+            norm_obstacle_direction = nearest_obstacle_temp / obstacle_vec_norm
         else:
             norm_obstacle_direction = np.array([0, 0, 0], np.dtype("float64"))
 

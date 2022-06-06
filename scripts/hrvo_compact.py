@@ -150,19 +150,20 @@ class VODrive(object):
         self.vo_twist_msg = Twist()
 
         # goal location
-        self.goal = [-12, 12.5, 0]
+        self.goal = [0, 0, 0]
 
         #! modifiable parameters
-        self.max_vel = 0.3
+        self.max_vel = 0.35
         self.robot_radius = 0.35
         self.agent_radius = 0.40
-        self.obstacle_radius = 0.025
+        self.obstacle_radius = 0.1
+
+        self.r_sleep = rospy.Rate(30)
 
         #! subcribers
 
         self.goal_location_sub = rospy.Subscriber(
-            "/psmm_drive_node/goal",
-            PSMMDriveActionGoal,
+            "/psmm_drive_node/goal", PSMMDriveActionGoal, self.goal_callback
         )
 
         self.agents_states_subs = rospy.Subscriber(
@@ -182,15 +183,14 @@ class VODrive(object):
         )
 
         #! publishers
-        self.vo_cmd_vel_pub = rospy.Publisher("cmd_vel_hrvo", Twist, queue_size=10)
+        self.vo_cmd_vel_pub = rospy.Publisher("/cmd_vel_hrvo", Twist, queue_size=10)
 
     #! CALLBACKS
 
     def goal_callback(self, goal: PSMMDriveActionGoal):
-        # self.goal[0] = goal.goal.goal.x
-        # self.goal[1] = goal.goal.goal.y
+        self.goal[0] = goal.goal.goal.x
+        self.goal[1] = goal.goal.goal.y
         # self.goal[2] = goal.goal.goal.z
-        pass
 
     def agents_state_callback(self, data: AgentStates):
         """
@@ -226,8 +226,9 @@ class VODrive(object):
         map_origin_x = data.info.origin.position.x + (map_size_x / 2) * map_scale
         map_origin_y = data.info.origin.position.y + (map_size_y / 2) * map_scale
 
-        for j in range(0, map_size_y):
-            for i in range(0, map_size_x):
+        for j in range(0, map_size_y, 10):
+            for i in range(0, map_size_x, 10):
+                # print("map size: ", map_size_x * map_size_y)
                 if data.data[self.map_index(map_size_x, i, j)] == 100:
                     w_x = self.map_wx(map_origin_x, map_size_x, map_scale, i)
                     w_y = self.map_wy(map_origin_y, map_size_y, map_scale, j)
@@ -248,12 +249,16 @@ class VODrive(object):
     def compute_des_vel(self):
         v_des = [0, 0, 0]
         goal_vec = self.goal - self.robot_position
-        norm = np.sqrt(np.power(goal_vec[0], 2) + np.power(goal_vec[1], 2))
-        if norm < 0.25:
-            v_des = [0, 0, 0]
-        else:
-            vel_vec = self.max_vel * (goal_vec / norm)
-            v_des = [vel_vec[0], vel_vec[1], vel_vec[2]]
+        # print("goal_vec:", goal_vec)
+        norm = np.linalg.norm(goal_vec)
+        # print("norm:", norm)
+        if norm != 0:
+            v_des = self.max_vel * (goal_vec / norm)
+
+        # if norm < 0.05:
+        #     v_des = [0, 0, 0]
+        # else:
+
         return v_des
 
     def vo_velocity(self):
@@ -317,12 +322,16 @@ class VODrive(object):
     def run(self):
         while not rospy.is_shutdown():
             self.vo_velocity_val = self.vo_velocity()
-            print(self.vo_velocity_val)
+            # print("===================")
+            # print("hrvo: ", self.vo_velocity_val)
+            # print("goal:", self.goal)
+
             self.vo_twist_msg.linear.x = self.vo_velocity_val[0]
             self.vo_twist_msg.linear.y = self.vo_velocity_val[1]
+            # self.vo_twist_msg.angular.z = 0.1
 
             self.vo_cmd_vel_pub.publish(self.vo_twist_msg)
-            time.sleep(0.01)
+            self.r_sleep.sleep()
 
 
 if __name__ == "__main__":
