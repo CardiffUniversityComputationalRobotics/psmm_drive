@@ -147,11 +147,11 @@ class ProactiveSocialMotionModelDriveAction(object):
                     )
                 )
             )
-            <= 0.3
+            <= 3
         ):
             if self.using_waypoints:
-                if len(self.waypoints != 1):
-                    self.current_waypoint.pop(0)
+                if len(self.waypoints) != 1:
+                    self.waypoints.pop(0)
                     self.current_waypoint = np.array(
                         [self.waypoints[0][0], self.waypoints[0][1], 0],
                         np.dtype("float64"),
@@ -162,6 +162,7 @@ class ProactiveSocialMotionModelDriveAction(object):
                     current_goal_msg.z = 0
 
                     self.current_goal_pub.publish(current_goal_msg)
+                    print("NEXT WAYPOINT NOW: ", len(self.waypoints))
 
                 else:
                     return True
@@ -216,13 +217,13 @@ class ProactiveSocialMotionModelDriveAction(object):
             complete_force = (
                 desired_complete_force + social_complete_force + obstacle_complete_force
             )
-            print("#######################")
+            # print("#######################")
 
-            print("hrvo vel:", self.hrvo_vel)
-            print("desired force:", desired_complete_force)
-            print("nearest_obstacle:", self.nearest_obstacle)
-            print("obstacle force:", obstacle_complete_force)
-            print("complete force:", complete_force)
+            # print("hrvo vel:", self.hrvo_vel)
+            # print("desired force:", desired_complete_force)
+            # print("nearest_obstacle:", self.nearest_obstacle)
+            # print("obstacle force:", obstacle_complete_force)
+            # print("complete force:", complete_force)
 
             # time.sleep(1)
 
@@ -357,7 +358,7 @@ class ProactiveSocialMotionModelDriveAction(object):
 
         self.nearest_obstacle[0] = cur_nearest_obs[0]
         self.nearest_obstacle[1] = cur_nearest_obs[1]
-        print("nearest_obstacle:", self.nearest_obstacle)
+        # print("nearest_obstacle:", self.nearest_obstacle)
 
     def map_index(self, size_x, i, j):
         return i + j * size_x
