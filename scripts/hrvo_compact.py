@@ -13,7 +13,7 @@ from math import sqrt
 from math import cos, sin, atan2, asin
 
 from math import pi as PI
-import time
+from geometry_msgs.msg import Point
 
 
 def distance(pose1, pose2):
@@ -163,11 +163,11 @@ class VODrive(object):
         #! subcribers
 
         self.goal_location_sub = rospy.Subscriber(
-            "/psmm_drive_node/goal", PSMMDriveActionGoal, self.goal_callback
+            "/psmm_current_goal", Point, self.goal_callback
         )
 
         self.agents_states_subs = rospy.Subscriber(
-            "/pedsim_simulator/simulated_agents_overwritten",
+            "/pedsim_simulator/simulated_agents",
             AgentStates,
             self.agents_state_callback,
         )
@@ -187,9 +187,9 @@ class VODrive(object):
 
     #! CALLBACKS
 
-    def goal_callback(self, goal: PSMMDriveActionGoal):
-        self.goal[0] = goal.goal.goal.x
-        self.goal[1] = goal.goal.goal.y
+    def goal_callback(self, goal: Point):
+        self.goal[0] = goal.x
+        self.goal[1] = goal.y
         # self.goal[2] = goal.goal.goal.z
 
     def agents_state_callback(self, data: AgentStates):

@@ -17,7 +17,8 @@ from psmm_drive.msg import (
     PSMMDriveAction,
 )
 
-from move_base_msgs.msg import MoveBaseAction
+from geometry_msgs.msg import Point
+
 from actionlib_msgs.msg import GoalID
 from nav_msgs.msg import OccupancyGrid
 
@@ -79,6 +80,13 @@ class ProactiveSocialMotionModelDriveAction(object):
         self.robot_max_turn_vel = rospy.get_param("~max_vel_turn", 0.4)
         self.cmd_vel_topic = rospy.get_param("~cmd_vel_topic", "/cmd_vel")
 
+        self.waypoints = rospy.get_param("~waypoints", [])
+        self.using_waypoints = False
+
+        self.current_goal_topic = rospy.get_param(
+            "~current_goal_topic", "/psmm_current_goal"
+        )
+
         self.tf = TransformListener()
 
         self._as = actionlib.SimpleActionServer(
@@ -91,7 +99,7 @@ class ProactiveSocialMotionModelDriveAction(object):
 
         #! subscribers
         self.agents_states_subs = rospy.Subscriber(
-            "/pedsim_simulator/simulated_agents_overwritten",
+            "/pedsim_simulator/simulated_agents",
             AgentStates,
             self.agents_state_callback,
         )
@@ -121,6 +129,10 @@ class ProactiveSocialMotionModelDriveAction(object):
         #! publishers
         self.velocity_pub = rospy.Publisher(self.cmd_vel_topic, Twist, queue_size=10)
 
+        self.current_goal_pub = rospy.Publisher(
+            self.current_goal_topic, Point, queue_size=10
+        )
+
     def check_goal_reached(self):
         if (
             abs(
@@ -137,7 +149,24 @@ class ProactiveSocialMotionModelDriveAction(object):
             )
             <= 0.3
         ):
-            return True
+            if self.using_waypoints:
+                if len(self.waypoints != 1):
+                    self.current_waypoint.pop(0)
+                    self.current_waypoint = np.array(
+                        [self.waypoints[0][0], self.waypoints[0][1], 0],
+                        np.dtype("float64"),
+                    )
+                    current_goal_msg = Point()
+                    current_goal_msg.x = self.current_waypoint[0]
+                    current_goal_msg.y = self.current_waypoint[1]
+                    current_goal_msg.z = 0
+
+                    self.current_goal_pub.publish(current_goal_msg)
+
+                else:
+                    return True
+            else:
+                return True
         return False
 
     # * callbacks
@@ -156,9 +185,23 @@ class ProactiveSocialMotionModelDriveAction(object):
         cancel_move_pub.publish(cancel_msg)
 
         self.goal_set = True
-        self.current_waypoint = np.array(
-            [goal.goal.x, goal.goal.y, goal.goal.z], np.dtype("float64")
-        )
+
+        if len(self.waypoints) > 0:
+            self.current_waypoint = np.array(
+                [self.waypoints[0][0], self.waypoints[0][1], 0], np.dtype("float64")
+            )
+            self.using_waypoints = True
+        else:
+            self.current_waypoint = np.array(
+                [goal.goal.x, goal.goal.y, goal.goal.z], np.dtype("float64")
+            )
+
+        current_goal_msg = Point()
+        current_goal_msg.x = self.current_waypoint[0]
+        current_goal_msg.y = self.current_waypoint[1]
+        current_goal_msg.z = 0
+
+        self.current_goal_pub.publish(current_goal_msg)
 
         while not self.check_goal_reached():
 
