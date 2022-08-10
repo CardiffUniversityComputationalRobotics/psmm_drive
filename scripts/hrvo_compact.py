@@ -160,14 +160,14 @@ class VODrive(object):
         self.goal = [0, 0, 0]
 
         #! modifiable parameters
-        self.max_vel = 0.35
+        self.max_vel = 0.4
         self.robot_radius = 0.35
         self.agent_radius = 0.40
         self.obstacle_radius = 0.1
 
         self.goal_available = False
 
-        self.r_sleep = rospy.Rate(30)
+        self.r_sleep = rospy.Rate(100)
 
         #! subcribers
 
@@ -192,7 +192,7 @@ class VODrive(object):
         )
 
         #! publishers
-        self.vo_cmd_vel_pub = rospy.Publisher("/pepper/cmd_vel", Twist, queue_size=10)
+        self.vo_cmd_vel_pub = rospy.Publisher("/cmd_vel_hrvo", Twist, queue_size=10)
 
     #! CALLBACKS
 
@@ -200,7 +200,7 @@ class VODrive(object):
         self.goal[0] = goal.x
         self.goal[1] = goal.y
         self.goal_available = True
-        print("current goal: ", self.goal)
+        # print("current goal: ", self.goal)
         # self.goal[2] = goal.goal.goal.z
 
     def agents_state_callback(self, data: AgentStates):
@@ -237,8 +237,8 @@ class VODrive(object):
         map_origin_x = data.info.origin.position.x + (map_size_x / 2) * map_scale
         map_origin_y = data.info.origin.position.y + (map_size_y / 2) * map_scale
 
-        for j in range(0, map_size_y):
-            for i in range(0, map_size_x):
+        for j in range(0, map_size_y, 10):
+            for i in range(0, map_size_x, 10):
                 # print("map size: ", map_size_x * map_size_y)
                 if data.data[self.map_index(map_size_x, i, j)] == 100:
                     w_x = self.map_wx(map_origin_x, map_size_x, map_scale, i)
@@ -262,6 +262,7 @@ class VODrive(object):
         goal_vec = self.goal - self.robot_position
         # print("goal_vec:", goal_vec)
         norm = np.linalg.norm(goal_vec)
+        # print("distance: ", norm)
         # print("norm:", norm)
         if norm != 0:
             v_des = self.max_vel * (goal_vec / norm)
@@ -338,22 +339,22 @@ class VODrive(object):
             # print("hrvo: ", self.vo_velocity_val)
             # print("goal:", self.goal)
 
-            orientation_list = [
-                self.robot_orientation[0],
-                self.robot_orientation[1],
-                self.robot_orientation[2],
-                self.robot_orientation[3],
-            ]
-            (roll, pitch, yaw) = euler_from_quaternion(orientation_list)
+            # orientation_list = [
+            #     self.robot_orientation[0],
+            #     self.robot_orientation[1],
+            #     self.robot_orientation[2],
+            #     self.robot_orientation[3],
+            # ]
+            # (roll, pitch, yaw) = euler_from_quaternion(orientation_list)
 
-            angle = wrapAngle(
-                math.atan2(self.vo_velocity_val[0], self.vo_velocity_val[1]) - yaw
-            )
-            print("angle: ", angle)
-            print("velocity: ", self.vo_velocity)
-            self.vo_twist_msg.linear.x = self.vo_velocity_val[0] * (math.cos(angle))
-            self.vo_twist_msg.linear.y = 0
-            self.vo_twist_msg.angular.z = self.vo_velocity_val[1] * (math.sin(angle))
+            # angle = wrapAngle(
+            #     math.atan2(self.vo_velocity_val[1], self.vo_velocity_val[0]) - yaw
+            # )
+            # print("angle: ", angle)
+            # print("velocity: ", self.vo_velocity_val)
+            self.vo_twist_msg.linear.x = self.vo_velocity_val[0]
+            self.vo_twist_msg.linear.y = self.vo_velocity_val[1]
+            # self.vo_twist_msg.angular.z = 0.5*(angle/3.14)
             # self.vo_twist_msg.angular.z = 0.1
             if self.goal_available:
                 self.vo_cmd_vel_pub.publish(self.vo_twist_msg)

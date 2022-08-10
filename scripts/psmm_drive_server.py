@@ -147,7 +147,7 @@ class ProactiveSocialMotionModelDriveAction(object):
                     )
                 )
             )
-            <= 3
+            <= 0.2
         ):
             if self.using_waypoints:
                 if len(self.waypoints) != 1:
