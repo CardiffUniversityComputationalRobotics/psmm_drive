@@ -5,15 +5,16 @@ from pedsim_msgs.msg import AgentStates
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist
 import numpy as np
-from psmm_drive.msg import PSMMDriveActionGoal
 
 from nav_msgs.msg import OccupancyGrid
-
+import math
 from math import sqrt
 from math import cos, sin, atan2, asin
 
 from math import pi as PI
 from geometry_msgs.msg import Point
+
+from tf.transformations import euler_from_quaternion
 
 
 def distance(pose1, pose2):
@@ -44,6 +45,12 @@ def in_between(theta_right, theta_dif, theta_left):
                 return True
             else:
                 return False
+
+
+def wrapAngle(angle):
+    """wrapAngle
+    Calculates angles values between 0 and 2pi"""
+    return angle + (2.0 * math.pi * math.floor((math.pi - angle) / (2.0 * math.pi)))
 
 
 def intersect(pA, vA, RVO_BA_all):
@@ -158,6 +165,8 @@ class VODrive(object):
         self.agent_radius = 0.40
         self.obstacle_radius = 0.1
 
+        self.goal_available = False
+
         self.r_sleep = rospy.Rate(30)
 
         #! subcribers
@@ -183,13 +192,15 @@ class VODrive(object):
         )
 
         #! publishers
-        self.vo_cmd_vel_pub = rospy.Publisher("/cmd_vel_hrvo", Twist, queue_size=10)
+        self.vo_cmd_vel_pub = rospy.Publisher("/pepper/cmd_vel", Twist, queue_size=10)
 
     #! CALLBACKS
 
     def goal_callback(self, goal: Point):
         self.goal[0] = goal.x
         self.goal[1] = goal.y
+        self.goal_available = True
+        print("current goal: ", self.goal)
         # self.goal[2] = goal.goal.goal.z
 
     def agents_state_callback(self, data: AgentStates):
@@ -226,8 +237,8 @@ class VODrive(object):
         map_origin_x = data.info.origin.position.x + (map_size_x / 2) * map_scale
         map_origin_y = data.info.origin.position.y + (map_size_y / 2) * map_scale
 
-        for j in range(0, map_size_y, 10):
-            for i in range(0, map_size_x, 10):
+        for j in range(0, map_size_y):
+            for i in range(0, map_size_x):
                 # print("map size: ", map_size_x * map_size_y)
                 if data.data[self.map_index(map_size_x, i, j)] == 100:
                     w_x = self.map_wx(map_origin_x, map_size_x, map_scale, i)
@@ -317,6 +328,7 @@ class VODrive(object):
             ]
             RVO_BA_all.append(RVO_BA)
         vA_post = intersect(pA, self.compute_des_vel(), RVO_BA_all)
+        # print(vA_post)
         return vA_post[:]
 
     def run(self):
@@ -326,11 +338,25 @@ class VODrive(object):
             # print("hrvo: ", self.vo_velocity_val)
             # print("goal:", self.goal)
 
-            self.vo_twist_msg.linear.x = self.vo_velocity_val[0]
-            self.vo_twist_msg.linear.y = self.vo_velocity_val[1]
-            # self.vo_twist_msg.angular.z = 0.1
+            orientation_list = [
+                self.robot_orientation[0],
+                self.robot_orientation[1],
+                self.robot_orientation[2],
+                self.robot_orientation[3],
+            ]
+            (roll, pitch, yaw) = euler_from_quaternion(orientation_list)
 
-            self.vo_cmd_vel_pub.publish(self.vo_twist_msg)
+            angle = wrapAngle(
+                math.atan2(self.vo_velocity_val[0], self.vo_velocity_val[1]) - yaw
+            )
+            print("angle: ", angle)
+            print("velocity: ", self.vo_velocity)
+            self.vo_twist_msg.linear.x = self.vo_velocity_val[0] * (math.cos(angle))
+            self.vo_twist_msg.linear.y = 0
+            self.vo_twist_msg.angular.z = self.vo_velocity_val[1] * (math.sin(angle))
+            # self.vo_twist_msg.angular.z = 0.1
+            if self.goal_available:
+                self.vo_cmd_vel_pub.publish(self.vo_twist_msg)
             self.r_sleep.sleep()
 
 
