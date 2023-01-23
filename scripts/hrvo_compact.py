@@ -313,9 +313,9 @@ class VODrive(object):
             ]
             RVO_BA_all.append(RVO_BA)
 
-        for obstacle_pos in self.obstacles_pos:
+        for i in range(0, len(self.obstacles_pos), 5):
             vB = [0, 0]
-            pB = obstacle_pos
+            pB = self.obstacles_pos[i]
             transl_vB_vA = [pA[0] + vB[0], pA[1] + vB[1]]
             dist_BA = distance(pA, pB)
             theta_BA = atan2(pB[1] - pA[1], pB[0] - pA[0])
