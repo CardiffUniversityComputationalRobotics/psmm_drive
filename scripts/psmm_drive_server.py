@@ -2,7 +2,7 @@
 import rospy
 
 from pedsim_msgs.msg import AgentStates, AgentGroups
-from nav_msgs.msg import Odometry
+from nav_msgs.msg import Odometry, OccupancyGrid, Path
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Twist
 from tf import TransformListener
@@ -20,7 +20,6 @@ from psmm_drive.msg import (
 from geometry_msgs.msg import Point
 
 from actionlib_msgs.msg import GoalID
-from nav_msgs.msg import OccupancyGrid
 
 
 class ProactiveSocialMotionModelDriveAction(object):
@@ -83,6 +82,15 @@ class ProactiveSocialMotionModelDriveAction(object):
         self.waypoints = rospy.get_param("~waypoints", [])
         self.using_waypoints = False
 
+        # topic configs
+        self.global_plan_topic = rospy.get_param("~goal_path_topic", "")
+        self.agent_states_topic = rospy.get_param(
+            "~social_agents_topic", "/pedsim_simulator/simulated_agents"
+        )
+        self.odom_topic = rospy.get_param("~odom_topic", "/pepper/odom_groundtruth")
+        self.laser_topic = rospy.get_param("~laser_topic", "/scan_filtered")
+        self.map_topic = rospy.get_param("~map_topic", "/projected_map")
+
         self.current_goal_topic = rospy.get_param(
             "~current_goal_topic", "/psmm_current_goal"
         )
@@ -99,7 +107,7 @@ class ProactiveSocialMotionModelDriveAction(object):
 
         #! subscribers
         self.agents_states_subs = rospy.Subscriber(
-            "/pedsim_simulator/simulated_agents",
+            self.agent_states_topic,
             AgentStates,
             self.agents_state_callback,
         )
@@ -111,18 +119,23 @@ class ProactiveSocialMotionModelDriveAction(object):
         )
 
         self.robot_pos_subs = rospy.Subscriber(
-            "/pepper/odom_groundtruth",
+            self.odom_topic,
             Odometry,
             self.robot_pos_callback,
         )
 
         self.laser_scan_subs = rospy.Subscriber(
-            "/scan_filtered", LaserScan, self.laser_scan_callback
+            self.laser_topic, LaserScan, self.laser_scan_callback
         )
 
         self.obstacles_subs = rospy.Subscriber(
-            "/projected_map", OccupancyGrid, self.obstacle_map_processing
+            self.map_topic, OccupancyGrid, self.obstacle_map_processing
         )
+
+        if self.global_plan_topic != "":
+            self.global_plan_sub = rospy.Subscriber(
+                self.global_plan_topic, Path, self.global_plan_callback, queue_size=1
+            )
 
         self.hrvo_subs = rospy.Subscriber("/cmd_vel_hrvo", Twist, self.hrvo_vel_cb)
 
@@ -132,6 +145,11 @@ class ProactiveSocialMotionModelDriveAction(object):
         self.current_goal_pub = rospy.Publisher(
             self.current_goal_topic, Point, queue_size=10
         )
+
+    def global_plan_callback(self, msg):
+        self.waypoints = []
+        for pose in msg.poses:
+            self.waypoints.append([pose.pose.position.x, pose.pose.position.y])
 
     def check_goal_reached(self):
         if (

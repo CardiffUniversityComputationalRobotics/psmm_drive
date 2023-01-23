@@ -167,6 +167,15 @@ class VODrive(object):
 
         self.goal_available = False
 
+        # topic configs
+        self.global_plan_topic = rospy.get_param("~goal_path_topic", "")
+        self.agent_states_topic = rospy.get_param(
+            "~social_agents_topic", "/pedsim_simulator/simulated_agents"
+        )
+        self.odom_topic = rospy.get_param("~odom_topic", "/pepper/odom_groundtruth")
+        self.laser_topic = rospy.get_param("~laser_topic", "/scan_filtered")
+        self.map_topic = rospy.get_param("~map_topic", "/projected_map")
+
         self.r_sleep = rospy.Rate(100)
 
         #! subcribers
@@ -176,19 +185,19 @@ class VODrive(object):
         )
 
         self.agents_states_subs = rospy.Subscriber(
-            "/pedsim_simulator/simulated_agents",
+            self.agent_states_topic,
             AgentStates,
             self.agents_state_callback,
         )
 
         self.robot_pos_subs = rospy.Subscriber(
-            "/pepper/odom_groundtruth",
+            self.odom_topic,
             Odometry,
             self.robot_pos_callback,
         )
 
         self.obstacles_subs = rospy.Subscriber(
-            "/projected_map", OccupancyGrid, self.obstacle_map_processing
+            self.map_topic, OccupancyGrid, self.obstacle_map_processing
         )
 
         #! publishers
