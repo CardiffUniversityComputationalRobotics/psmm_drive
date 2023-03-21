@@ -362,8 +362,8 @@ class ProactiveSocialMotionModelDriveAction(object):
         map_origin_x = self.map.info.origin.position.x + (map_size_x / 2) * map_scale
         map_origin_y = self.map.info.origin.position.y + (map_size_y / 2) * map_scale
 
-        for j in range(0, map_size_y, 2):
-            for i in range(0, map_size_x, 2):
+        for j in range(0, map_size_y, 10):
+            for i in range(0, map_size_x, 10):
                 if self.map.data[self.map_index(map_size_x, i, j)] == 100:
                     w_x = self.map_wx(map_origin_x, map_size_x, map_scale, i)
                     w_y = self.map_wy(map_origin_y, map_size_y, map_scale, j)

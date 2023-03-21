@@ -313,7 +313,7 @@ class VODrive(object):
             ]
             RVO_BA_all.append(RVO_BA)
 
-        for i in range(0, len(self.obstacles_pos), 5):
+        for i in range(0, len(self.obstacles_pos), 10):
             vB = [0, 0]
             pB = self.obstacles_pos[i]
             transl_vB_vA = [pA[0] + vB[0], pA[1] + vB[1]]
