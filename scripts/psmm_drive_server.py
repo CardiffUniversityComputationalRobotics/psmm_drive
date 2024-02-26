@@ -5,6 +5,7 @@ from pedsim_msgs.msg import AgentStates, AgentGroups
 from nav_msgs.msg import Odometry, OccupancyGrid, Path
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Twist
+from std_msgs.msg import Bool
 from tf import TransformListener
 import tf
 import numpy as np
@@ -146,6 +147,8 @@ class ProactiveSocialMotionModelDriveAction(object):
         self.current_goal_pub = rospy.Publisher(
             self.current_goal_topic, Point, queue_size=10
         )
+
+        self.goal_achieved_pub = rospy.Publisher("/goal_achieved", Bool, queue_size=10)
 
     def global_plan_callback(self, msg):
         self.waypoints = []
@@ -335,6 +338,8 @@ class ProactiveSocialMotionModelDriveAction(object):
         self._result.result = "waypoint reached"
         rospy.loginfo("waypoint reached")
         self._as.set_succeeded(self._result)
+
+        self.goal_achieved_pub.publish(True)
 
     # define MAP_INDEX(map, i, j) ((i) + (j) * map.size_x)
     def map_index(self, size_x, i, j):
