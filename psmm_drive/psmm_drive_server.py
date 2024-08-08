@@ -1,41 +1,26 @@
-#!/usr/bin/env python3
-import rospy
+import rclpy
+from rclpy.node import Node
 
 from pedsim_msgs.msg import AgentStates, AgentGroups
 from nav_msgs.msg import Odometry, OccupancyGrid, Path
 from sensor_msgs.msg import LaserScan
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, Point
 from std_msgs.msg import Bool
-from tf import TransformListener
-import tf
+
 import numpy as np
 import math
-import actionlib
-
-from psmm_drive.msg import (
-    PSMMDriveFeedback,
-    PSMMDriveResult,
-    PSMMDriveAction,
-)
-
-from geometry_msgs.msg import Point
-
-from actionlib_msgs.msg import GoalID
+from tf_transformations import euler_from_quaternion
 
 
-class ProactiveSocialMotionModelDriveAction(object):
-
-    _feedback = PSMMDriveFeedback()
-    _result = PSMMDriveResult()
+class ProactiveSocialMotionModelDriveNode(Node):
 
     def __init__(self):
+        super().__init__("psmm_drive_node")
 
         # base variables
         self.goal_set = False
 
         self.xy_tolerance = 1
-
-        self._action_name = "psmm_drive_node"
 
         self.agents_states_register = []
         self.agents_groups_register = []
@@ -66,132 +51,130 @@ class ProactiveSocialMotionModelDriveAction(object):
         self.force_sigma_obstacle = 0.8
 
         # for social force computing
-
         self.lambda_importance = 2
         self.gamma = 0.35
         self.n = 2
         self.n_prime = 3
 
-        # constants for forces and other parameters
-        self.force_factor_desired = rospy.get_param("~force_desired", 4.2)
-        self.force_factor_social = rospy.get_param("~force_social", 3.64)
-        self.force_factor_obstacle = rospy.get_param("~force_obstacle", 35)
-        self.robot_max_vel = rospy.get_param("~max_vel", 0.4)
-        self.robot_max_turn_vel = rospy.get_param("~max_vel_turn", 0.4)
-        self.cmd_vel_topic = rospy.get_param("~cmd_vel_topic", "/cmd_vel")
+        # Declare parameters
+        self.declare_parameter("force_desired", 4.2)
+        self.declare_parameter("force_social", 3.64)
+        self.declare_parameter("force_obstacle", 35.0)
+        self.declare_parameter("max_vel", 0.4)
+        self.declare_parameter("max_vel_turn", 0.4)
+        self.declare_parameter("cmd_vel_topic", "/cmd_vel")
+        self.declare_parameter("waypoints", [])
+        self.declare_parameter("goal_path_topic", "")
+        self.declare_parameter(
+            "social_agents_topic", "/pedsim_simulator/simulated_agents"
+        )
+        self.declare_parameter("odom_topic", "/pepper/odom_groundtruth")
+        self.declare_parameter("laser_topic", "/scan_filtered")
+        self.declare_parameter("map_topic", "/projected_map")
+        self.declare_parameter("current_goal_topic", "/psmm_current_goal")
 
-        self.waypoints = rospy.get_param("~waypoints", [])
+        # constants for forces and other parameters
+        # Retrieve parameters
+        self.force_factor_desired = (
+            self.get_parameter("force_desired").get_parameter_value().double_value
+        )
+        self.force_factor_social = (
+            self.get_parameter("force_social").get_parameter_value().double_value
+        )
+        self.force_factor_obstacle = (
+            self.get_parameter("force_obstacle").get_parameter_value().double_value
+        )
+        self.robot_max_vel = (
+            self.get_parameter("max_vel").get_parameter_value().double_value
+        )
+        self.robot_max_turn_vel = (
+            self.get_parameter("max_vel_turn").get_parameter_value().double_value
+        )
+        self.cmd_vel_topic = (
+            self.get_parameter("cmd_vel_topic").get_parameter_value().string_value
+        )
+
+        self.waypoints = (
+            self.get_parameter("waypoints").get_parameter_value().double_array_value
+        )
         self.using_waypoints = False
         self.map = OccupancyGrid()
 
-        # topic configs
-        self.global_plan_topic = rospy.get_param("~goal_path_topic", "")
-        self.agent_states_topic = rospy.get_param(
-            "~social_agents_topic", "/pedsim_simulator/simulated_agents"
+        # Topic configs
+        self.global_plan_topic = (
+            self.get_parameter("goal_path_topic").get_parameter_value().string_value
         )
-        self.odom_topic = rospy.get_param("~odom_topic", "/pepper/odom_groundtruth")
-        self.laser_topic = rospy.get_param("~laser_topic", "/scan_filtered")
-        self.map_topic = rospy.get_param("~map_topic", "/projected_map")
-
-        self.current_goal_topic = rospy.get_param(
-            "~current_goal_topic", "/psmm_current_goal"
+        self.agent_states_topic = (
+            self.get_parameter("social_agents_topic").get_parameter_value().string_value
         )
-
-        self.tf = TransformListener()
-
-        self._as = actionlib.SimpleActionServer(
-            self._action_name,
-            PSMMDriveAction,
-            execute_cb=self.execute_cb,
-            auto_start=False,
+        self.odom_topic = (
+            self.get_parameter("odom_topic").get_parameter_value().string_value
         )
-        self._as.start()
+        self.laser_topic = (
+            self.get_parameter("laser_topic").get_parameter_value().string_value
+        )
+        self.map_topic = (
+            self.get_parameter("map_topic").get_parameter_value().string_value
+        )
+        self.current_goal_topic = (
+            self.get_parameter("current_goal_topic").get_parameter_value().string_value
+        )
 
         #! subscribers
-        self.agents_states_subs = rospy.Subscriber(
-            self.agent_states_topic,
+        self.agents_states_subs = self.create_subscription(
             AgentStates,
+            self.agent_states_topic,
             self.agents_state_callback,
+            10,
         )
 
-        self.agents_groups_subs = rospy.Subscriber(
-            "/pedsim_simulator/simulated_groups",
+        self.agents_groups_subs = self.create_subscription(
             AgentGroups,
+            "/pedsim_simulator/simulated_groups",
             self.agents_groups_callback,
+            10,
         )
 
-        self.robot_pos_subs = rospy.Subscriber(
-            self.odom_topic,
+        self.robot_pos_subs = self.create_subscription(
             Odometry,
+            self.odom_topic,
             self.robot_pos_callback,
+            10,
         )
 
-        self.laser_scan_subs = rospy.Subscriber(
-            self.laser_topic, LaserScan, self.laser_scan_callback
+        self.laser_scan_subs = self.create_subscription(
+            LaserScan, self.laser_topic, self.laser_scan_callback, 10
         )
 
-        self.obstacles_subs = rospy.Subscriber(
-            self.map_topic, OccupancyGrid, self.map_callback
+        self.obstacles_subs = self.create_subscription(
+            OccupancyGrid, self.map_topic, self.map_callback, 10
         )
 
         if self.global_plan_topic != "":
-            self.global_plan_sub = rospy.Subscriber(
-                self.global_plan_topic, Path, self.global_plan_callback, queue_size=1
+            self.global_plan_sub = self.create_subscription(
+                Path, self.global_plan_topic, self.global_plan_callback, 10
             )
 
-        self.hrvo_subs = rospy.Subscriber("/cmd_vel_hrvo", Twist, self.hrvo_vel_cb)
-
-        #! publishers
-        self.velocity_pub = rospy.Publisher(self.cmd_vel_topic, Twist, queue_size=10)
-
-        self.current_goal_pub = rospy.Publisher(
-            self.current_goal_topic, Point, queue_size=10
+        self.hrvo_subs = self.create_subscription(
+            Twist, "/cmd_vel_hrvo", self.hrvo_vel_cb, 10
         )
 
-        self.goal_achieved_pub = rospy.Publisher("/goal_achieved", Bool, queue_size=10)
+        #! publishers
+        self.velocity_pub = self.create_publisher(Twist, self.cmd_vel_topic, 10)
+
+        self.current_goal_pub = self.create_publisher(
+            Point, self.current_goal_topic, 10
+        )
+
+        self.goal_achieved_pub = self.create_publisher(Bool, "/goal_achieved", 10)
 
     def global_plan_callback(self, msg):
         self.waypoints = []
         for pose in msg.poses:
             self.waypoints.append([pose.pose.position.x, pose.pose.position.y])
+
+        self.get_logger().info("received_path")
         self.obstacle_map_processing()
-
-    def check_goal_reached(self):
-        if (
-            abs(
-                np.linalg.norm(
-                    np.array(
-                        [self.current_waypoint[0], self.current_waypoint[1]],
-                        np.dtype("float64"),
-                    )
-                    - np.array(
-                        [self.robot_position[0], self.robot_position[1]],
-                        np.dtype("float64"),
-                    )
-                )
-            )
-            <= 0.2
-        ):
-            if self.using_waypoints:
-                if len(self.waypoints) != 1:
-                    self.waypoints.pop(0)
-                    self.current_waypoint = np.array(
-                        [self.waypoints[0][0], self.waypoints[0][1], 0],
-                        np.dtype("float64"),
-                    )
-                    current_goal_msg = Point()
-                    current_goal_msg.x = self.current_waypoint[0]
-                    current_goal_msg.y = self.current_waypoint[1]
-                    current_goal_msg.z = 0
-
-                    self.current_goal_pub.publish(current_goal_msg)
-                    print("NEXT WAYPOINT NOW: ", len(self.waypoints))
-
-                else:
-                    return True
-            else:
-                return True
-        return False
 
     # * callbacks
 
@@ -201,145 +184,165 @@ class ProactiveSocialMotionModelDriveAction(object):
         self.hrvo_vel[0] = data.linear.x
         self.hrvo_vel[1] = data.linear.y
 
-    def execute_cb(self, goal):
-        rospy.loginfo("Starting social drive")
-        r_sleep = rospy.Rate(30)
-        cancel_move_pub = rospy.Publisher("/move_base/cancel", GoalID, queue_size=1)
-        cancel_msg = GoalID()
-        cancel_move_pub.publish(cancel_msg)
+    def movement_callback(self):
+        self.get_logger().info("Starting social drive")
 
-        self.goal_set = True
+        while rclpy.ok():
 
-        if len(self.waypoints) > 0:
-            self.current_waypoint = np.array(
-                [self.waypoints[0][0], self.waypoints[0][1], 0], np.dtype("float64")
-            )
-            self.using_waypoints = True
-        else:
-            self.current_waypoint = np.array(
-                [goal.goal.x, goal.goal.y, goal.goal.z], np.dtype("float64")
-            )
+            rclpy.spin_once(self)
+            if len(self.waypoints) > 0:
+                if (
+                    math.sqrt(
+                        math.pow(self.robot_position[0] - self.waypoints[-1][0], 2)
+                    )
+                    + math.sqrt(
+                        math.pow(self.robot_position[1] - self.waypoints[-1][1], 2)
+                    )
+                    < 0.25
+                ):
+                    reached_goal = Bool()
+                    reached_goal.data = True
+                    self.goal_achieved_pub.publish(reached_goal)
+                    vel = Twist()
+                    vel.linear.x = 0.0
+                    vel.angular.z = 0.0
+                    self.velocity_pub.publish(vel)
 
-        current_goal_msg = Point()
-        current_goal_msg.x = self.current_waypoint[0]
-        current_goal_msg.y = self.current_waypoint[1]
-        current_goal_msg.z = 0
+                else:
+                    self.get_logger().info("Starting social drive")
 
-        self.current_goal_pub.publish(current_goal_msg)
+                    while not len(self.waypoints) <= 1:
+                        if (
+                            math.sqrt(
+                                math.pow(
+                                    self.robot_position[0] - self.waypoints[0][0], 2
+                                )
+                            )
+                            + math.sqrt(
+                                math.pow(
+                                    self.robot_position[1] - self.waypoints[0][1], 2
+                                )
+                            )
+                            > 0.2
+                        ):
+                            break
+                        else:
+                            self.waypoints.pop(0)
+                    self.current_waypoint = np.array(
+                        [self.waypoints[0][0], self.waypoints[0][1], 0],
+                        np.dtype("float64"),
+                    )
 
-        while not self.check_goal_reached():
+                    current_goal_msg = Point()
+                    current_goal_msg.x = self.current_waypoint[0]
+                    current_goal_msg.y = self.current_waypoint[1]
+                    current_goal_msg.z = 0.0
 
-            obstacle_complete_force = (
-                self.force_factor_obstacle * self.obstacle_force_walls()
-            )
+                    self.current_goal_pub.publish(current_goal_msg)
 
-            social_complete_force = self.force_factor_social * self.social_force()
+                    rclpy.spin_once(self)
 
-            desired_complete_force = self.force_factor_desired * self.desired_force()
+                    obstacle_complete_force = (
+                        self.force_factor_obstacle * self.obstacle_force_walls()
+                    )
 
-            complete_force = (
-                desired_complete_force + social_complete_force + obstacle_complete_force
-            )
-            # print("#######################")
+                    social_complete_force = (
+                        self.force_factor_social * self.social_force()
+                    )
 
-            # print("hrvo vel:", self.hrvo_vel)
-            # print("desired force:", desired_complete_force)
-            # print("nearest_obstacle:", self.nearest_obstacle)
-            # print("obstacle force:", obstacle_complete_force)
-            # print("complete force:", complete_force)
+                    desired_complete_force = (
+                        self.force_factor_desired * self.desired_force()
+                    )
 
-            # time.sleep(1)
+                    complete_force = (
+                        desired_complete_force
+                        + social_complete_force
+                        + obstacle_complete_force
+                    )
 
-            self.robot_current_vel = self.robot_current_vel + (complete_force / 25)
+                    self.robot_current_vel = self.robot_current_vel + (
+                        complete_force / 25
+                    )
 
-            speed = np.linalg.norm(self.robot_current_vel)
+                    speed = np.linalg.norm(self.robot_current_vel)
 
-            if speed > self.robot_max_vel:
-                self.robot_current_vel = (
-                    self.robot_current_vel
-                    / np.linalg.norm(self.robot_current_vel)
-                    * self.robot_max_vel
-                )
+                    if speed > self.robot_max_vel:
+                        self.robot_current_vel = (
+                            self.robot_current_vel
+                            / np.linalg.norm(self.robot_current_vel)
+                            * self.robot_max_vel
+                        )
 
-            quaternion = (
-                self.robot_orientation[0],
-                self.robot_orientation[1],
-                self.robot_orientation[2],
-                self.robot_orientation[3],
-            )
+                    quaternion = (
+                        self.robot_orientation[0],
+                        self.robot_orientation[1],
+                        self.robot_orientation[2],
+                        self.robot_orientation[3],
+                    )
 
-            euler = tf.transformations.euler_from_quaternion(quaternion)
+                    euler = euler_from_quaternion(quaternion)
 
-            robot_offset_angle = euler[2]
+                    robot_offset_angle = euler[2]
 
-            if robot_offset_angle < 0:
-                robot_offset_angle = 2 * math.pi + robot_offset_angle
+                    if robot_offset_angle < 0:
+                        robot_offset_angle = 2 * math.pi + robot_offset_angle
 
-            angulo_velocidad = math.atan2(
-                self.robot_current_vel[0], self.robot_current_vel[1]
-            )
+                    angulo_velocidad = math.atan2(
+                        self.robot_current_vel[0], self.robot_current_vel[1]
+                    )
 
-            if angulo_velocidad > 0 and angulo_velocidad < (math.pi / 2):
-                angulo_velocidad = (math.pi / 2) - angulo_velocidad
-            elif angulo_velocidad > (math.pi / 2):
-                angulo_velocidad = (2 * math.pi) - angulo_velocidad + (math.pi / 2)
-            elif angulo_velocidad < 0:
-                angulo_velocidad = (math.pi / 2) - angulo_velocidad
-            elif angulo_velocidad == 0:
-                angulo_velocidad = math.pi / 2
-            elif abs(angulo_velocidad) == (math.pi / 2):
-                angulo_velocidad = math.pi * 3 / 2
+                    if angulo_velocidad > 0 and angulo_velocidad < (math.pi / 2):
+                        angulo_velocidad = (math.pi / 2) - angulo_velocidad
+                    elif angulo_velocidad > (math.pi / 2):
+                        angulo_velocidad = (
+                            (2 * math.pi) - angulo_velocidad + (math.pi / 2)
+                        )
+                    elif angulo_velocidad < 0:
+                        angulo_velocidad = (math.pi / 2) - angulo_velocidad
+                    elif angulo_velocidad == 0:
+                        angulo_velocidad = math.pi / 2
+                    elif abs(angulo_velocidad) == (math.pi / 2):
+                        angulo_velocidad = math.pi * 3 / 2
 
-            if robot_offset_angle > (angulo_velocidad + math.pi):
-                yaw_error = angulo_velocidad + 2 * math.pi - robot_offset_angle
-            elif angulo_velocidad > (robot_offset_angle + math.pi):
-                yaw_error = robot_offset_angle + 2 * math.pi - angulo_velocidad
-            else:
-                yaw_error = robot_offset_angle - angulo_velocidad
+                    if robot_offset_angle > (angulo_velocidad + math.pi):
+                        yaw_error = angulo_velocidad + 2 * math.pi - robot_offset_angle
+                    elif angulo_velocidad > (robot_offset_angle + math.pi):
+                        yaw_error = robot_offset_angle + 2 * math.pi - angulo_velocidad
+                    else:
+                        yaw_error = robot_offset_angle - angulo_velocidad
 
-            yaw_error = -robot_offset_angle + angulo_velocidad
+                    yaw_error = -robot_offset_angle + angulo_velocidad
 
-            if yaw_error < -math.pi:
-                yaw_error = 2 * math.pi + yaw_error
-            elif yaw_error > math.pi:
-                yaw_error = -2 * math.pi + yaw_error
+                    if yaw_error < -math.pi:
+                        yaw_error = 2 * math.pi + yaw_error
+                    elif yaw_error > math.pi:
+                        yaw_error = -2 * math.pi + yaw_error
 
-            if abs(yaw_error) < 0.2:
-                w = 0
-            else:
-                w = yaw_error * self.robot_max_turn_vel
+                    if abs(yaw_error) < 0.2:
+                        w = 0.0
+                    else:
+                        w = yaw_error * self.robot_max_turn_vel
 
-            if abs(w) > self.robot_max_turn_vel:
-                if w > 0:
-                    w = self.robot_max_turn_vel
-                elif w < 0:
-                    w = -self.robot_max_turn_vel
+                    if abs(w) > self.robot_max_turn_vel:
+                        if w > 0:
+                            w = self.robot_max_turn_vel
+                        elif w < 0:
+                            w = -self.robot_max_turn_vel
 
-            if abs(yaw_error) > 1.3:
-                vx = 0
-            else:
-                vx = np.linalg.norm(self.robot_current_vel) * math.cos(yaw_error)
+                    if abs(yaw_error) > 1.3:
+                        vx = 0.0
+                    else:
+                        vx = np.linalg.norm(self.robot_current_vel) * math.cos(
+                            yaw_error
+                        )
 
-            cmd_vel_msg = Twist()
-            cmd_vel_msg.linear.x = vx
-            cmd_vel_msg.angular.z = w
+                    cmd_vel_msg = Twist()
+                    cmd_vel_msg.linear.x = vx
+                    cmd_vel_msg.angular.z = w
 
-            self.velocity_pub.publish(cmd_vel_msg)
+                    self.get_logger().info("SENDING VELOCITY")
 
-            self._feedback.feedback = "robot moving"
-            # rospy.loginfo("robot_moving")
-            self._as.publish_feedback(self._feedback)
-            r_sleep.sleep()
-        cmd_vel_msg = Twist()
-        cmd_vel_msg.linear.x = 0
-        cmd_vel_msg.angular.z = 0
-
-        self.velocity_pub.publish(cmd_vel_msg)
-        self._result.result = "waypoint reached"
-        rospy.loginfo("waypoint reached")
-        self._as.set_succeeded(self._result)
-
-        self.goal_achieved_pub.publish(True)
+                    self.velocity_pub.publish(cmd_vel_msg)
 
     # define MAP_INDEX(map, i, j) ((i) + (j) * map.size_x)
     def map_index(self, size_x, i, j):
@@ -384,17 +387,6 @@ class ProactiveSocialMotionModelDriveAction(object):
         self.nearest_obstacle[0] = cur_nearest_obs[0]
         self.nearest_obstacle[1] = cur_nearest_obs[1]
 
-    def map_index(self, size_x, i, j):
-        return i + j * size_x
-
-    # define MAP_WXGX(map, i) (map.origin_x + (i - map.size_x / 2) * map.scale)
-
-    def map_wx(self, origin_x, size_x, scale, i):
-        return origin_x + (i - size_x / 2) * scale
-
-    def map_wy(self, origin_y, size_y, scale, j):
-        return origin_y + (j - size_y / 2) * scale
-
     def laser_scan_callback(self, data):
         """
         callback para agarrar los datos del laser
@@ -432,10 +424,10 @@ class ProactiveSocialMotionModelDriveAction(object):
         """
         self.agents_groups_register = data
 
-        # * force functions
-        """
-        funcion para obtener la fuerza al waypoint
-        """
+    # * force functions
+    """
+    funcion para obtener la fuerza al waypoint
+    """
 
     def desired_force(self):
 
@@ -589,12 +581,10 @@ class ProactiveSocialMotionModelDriveAction(object):
         return force
 
 
-"""
-obtencion de signo a partir de una numero
-"""
-
-
 def number_sign(n):
+    """
+    obtencion de signo a partir de una numero
+    """
     if n == 0:
         return 0
     elif n > 0:
@@ -602,34 +592,17 @@ def number_sign(n):
     return -1
 
 
-"""
-producto punto de dos vectores
-"""
-
-
-def dotproduct(v1, v2):
-    return sum((a * b) for a, b in zip(v1, v2))
-
-
-"""
-modulo de un vector
-"""
-
-
-def length(v):
-    return math.sqrt(dotproduct(v, v))
-
-
-"""
-angulo entre dos vectores
-"""
-
-
-def angle(v1, v2):
-    return math.acos(dotproduct(v1, v2) / (length(v1) * length(v2)))
+def main(args=None):
+    rclpy.init(args=args)
+    node = ProactiveSocialMotionModelDriveNode()
+    try:
+        node.movement_callback()
+    except KeyboardInterrupt:
+        node.get_logger().info("Node interrupted, shutting down.")
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
 
 
 if __name__ == "__main__":
-    rospy.init_node("psmm_drive_node")
-    server = ProactiveSocialMotionModelDriveAction()
-    rospy.spin()
+    main()

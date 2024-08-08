@@ -1,20 +1,13 @@
-#!/usr/bin/env python3
-import rospy
+import rclpy
+from rclpy.node import Node
 
 from pedsim_msgs.msg import AgentStates
-from nav_msgs.msg import Odometry
-from geometry_msgs.msg import Twist
+from nav_msgs.msg import Odometry, OccupancyGrid
+from geometry_msgs.msg import Twist, Point
 import numpy as np
-
-from nav_msgs.msg import OccupancyGrid
 import math
-from math import sqrt
-from math import cos, sin, atan2, asin
-
-from math import pi as PI
-from geometry_msgs.msg import Point
-
-from tf.transformations import euler_from_quaternion
+from math import sqrt, cos, sin, atan2, asin, pi as PI
+from tf_transformations import euler_from_quaternion
 
 
 def distance(pose1, pose2):
@@ -54,8 +47,6 @@ def wrapAngle(angle):
 
 
 def intersect(pA, vA, RVO_BA_all):
-    # print '----------------------------------------'
-    # print 'Start intersection test'
     norm_v = distance(vA, [0, 0])
     suitable_V = []
     unsuitable_V = []
@@ -95,9 +86,7 @@ def intersect(pA, vA, RVO_BA_all):
         suitable_V.append(new_v)
     else:
         unsuitable_V.append(new_v)
-    # ----------------------
     if suitable_V:
-        # print 'Suitable found'
         vA_post = min(suitable_V, key=lambda v: distance(v, vA))
         new_v = vA_post[:]
         for RVO_BA in RVO_BA_all:
@@ -109,7 +98,6 @@ def intersect(pA, vA, RVO_BA_all):
             theta_right = atan2(right[1], right[0])
             theta_left = atan2(left[1], left[0])
     else:
-        # print 'Suitable not found'
         tc_V = dict()
         for unsuit_v in unsuitable_V:
             tc_V[tuple(unsuit_v)] = 0
@@ -142,8 +130,9 @@ def intersect(pA, vA, RVO_BA_all):
     return vA_post
 
 
-class VODrive(object):
+class VODrive(Node):
     def __init__(self):
+        super().__init__("vo_node")
 
         # initial variables
         self.agents_states_register = []
@@ -168,40 +157,38 @@ class VODrive(object):
         self.goal_available = False
 
         # topic configs
-        self.global_plan_topic = rospy.get_param("~goal_path_topic", "")
-        self.agent_states_topic = rospy.get_param(
-            "~social_agents_topic", "/pedsim_simulator/simulated_agents"
-        )
-        self.odom_topic = rospy.get_param("~odom_topic", "/pepper/odom_groundtruth")
-        self.laser_topic = rospy.get_param("~laser_topic", "/scan_filtered")
-        self.map_topic = rospy.get_param("~map_topic", "/projected_map")
-
-        self.r_sleep = rospy.Rate(100)
+        self.global_plan_topic = self.declare_parameter("goal_path_topic", "").value
+        self.agent_states_topic = self.declare_parameter(
+            "social_agents_topic", "/pedsim_simulator/simulated_agents"
+        ).value
+        self.odom_topic = self.declare_parameter(
+            "odom_topic", "/pepper/odom_groundtruth"
+        ).value
+        self.laser_topic = self.declare_parameter("laser_topic", "/scan_filtered").value
+        self.map_topic = self.declare_parameter("map_topic", "/projected_map").value
 
         #! subcribers
-
-        self.goal_location_sub = rospy.Subscriber(
-            "/psmm_current_goal", Point, self.goal_callback
+        self.goal_location_sub = self.create_subscription(
+            Point, "/psmm_current_goal", self.goal_callback, 10
         )
 
-        self.agents_states_subs = rospy.Subscriber(
-            self.agent_states_topic,
-            AgentStates,
-            self.agents_state_callback,
+        self.agents_states_subs = self.create_subscription(
+            AgentStates, self.agent_states_topic, self.agents_state_callback, 10
         )
 
-        self.robot_pos_subs = rospy.Subscriber(
-            self.odom_topic,
-            Odometry,
-            self.robot_pos_callback,
+        self.robot_pos_subs = self.create_subscription(
+            Odometry, self.odom_topic, self.robot_pos_callback, 10
         )
 
-        self.obstacles_subs = rospy.Subscriber(
-            self.map_topic, OccupancyGrid, self.obstacle_map_processing
+        self.obstacles_subs = self.create_subscription(
+            OccupancyGrid, self.map_topic, self.obstacle_map_processing, 10
         )
 
         #! publishers
-        self.vo_cmd_vel_pub = rospy.Publisher("/cmd_vel_hrvo", Twist, queue_size=10)
+        self.vo_cmd_vel_pub = self.create_publisher(Twist, "/cmd_vel_hrvo", 10)
+
+        # Timer for running the node
+        # self.timer = self.create_timer(0.01, self.run)
 
     #! CALLBACKS
 
@@ -209,8 +196,6 @@ class VODrive(object):
         self.goal[0] = goal.x
         self.goal[1] = goal.y
         self.goal_available = True
-        # print("current goal: ", self.goal)
-        # self.goal[2] = goal.goal.goal.z
 
     def agents_state_callback(self, data: AgentStates):
         """
@@ -236,8 +221,7 @@ class VODrive(object):
         self.robot_velocities[1] = data.twist.twist.linear.y
         self.robot_velocities[2] = 0
 
-    def obstacle_map_processing(self, data):
-
+    def obstacle_map_processing(self, data: OccupancyGrid):
         self.obstacles_pos = []
 
         map_size_x = data.info.width
@@ -256,8 +240,6 @@ class VODrive(object):
 
     def map_index(self, size_x, i, j):
         return i + j * size_x
-
-    # define MAP_WXGX(map, i) (map.origin_x + (i - map.size_x / 2) * map.scale)
 
     def map_wx(self, origin_x, size_x, scale, i):
         return origin_x + (i - size_x / 2) * scale
@@ -342,7 +324,7 @@ class VODrive(object):
         return vA_post[:]
 
     def run(self):
-        while not rospy.is_shutdown():
+        while rclpy.ok():
             self.vo_velocity_val = self.vo_velocity()
             # print("===================")
             # print("hrvo: ", self.vo_velocity_val)
@@ -367,10 +349,16 @@ class VODrive(object):
             # self.vo_twist_msg.angular.z = 0.1
             if self.goal_available:
                 self.vo_cmd_vel_pub.publish(self.vo_twist_msg)
-            self.r_sleep.sleep()
+            rclpy.spin_once(self)
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    vo_node = VODrive()
+    vo_node.run()
+    vo_node.destroy_node()
+    rclpy.shutdown()
 
 
 if __name__ == "__main__":
-    rospy.init_node("vo_node")
-    vo_node = VODrive()
-    vo_node.run()
+    main()
