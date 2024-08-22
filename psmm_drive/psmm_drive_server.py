@@ -6,6 +6,7 @@ from nav_msgs.msg import Odometry, OccupancyGrid, Path
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Twist, Point
 from std_msgs.msg import Bool
+from esc_move_base_msgs.msg import Path2D
 
 import numpy as np
 import math
@@ -152,7 +153,7 @@ class ProactiveSocialMotionModelDriveNode(Node):
 
         if self.global_plan_topic != "":
             self.global_plan_sub = self.create_subscription(
-                Path, self.global_plan_topic, self.global_plan_callback, 10
+                Path2D, self.global_plan_topic, self.global_plan_callback, 10
             )
 
         self.hrvo_subs = self.create_subscription(
@@ -168,10 +169,10 @@ class ProactiveSocialMotionModelDriveNode(Node):
 
         self.goal_achieved_pub = self.create_publisher(Bool, "/goal_achieved", 10)
 
-    def global_plan_callback(self, msg):
+    def global_plan_callback(self, msg: Path2D):
         self.waypoints = []
-        for pose in msg.poses:
-            self.waypoints.append([pose.pose.position.x, pose.pose.position.y])
+        for pose in msg.waypoints:
+            self.waypoints.append([pose.x, pose.y])
 
         self.get_logger().info("received_path")
         self.obstacle_map_processing()
