@@ -4,7 +4,7 @@ from rclpy.node import Node
 from pedsim_msgs.msg import AgentStates, AgentGroups
 from nav_msgs.msg import Odometry, OccupancyGrid, Path
 from sensor_msgs.msg import LaserScan
-from geometry_msgs.msg import Twist, Point
+from geometry_msgs.msg import Twist, Point, PoseStamped
 from std_msgs.msg import Bool
 from esc_move_base_msgs.msg import Path2D
 
@@ -20,6 +20,7 @@ class ProactiveSocialMotionModelDriveNode(Node):
 
         # base variables
         self.goal_set = False
+        self.goal = None
 
         self.xy_tolerance = 1
 
@@ -160,6 +161,10 @@ class ProactiveSocialMotionModelDriveNode(Node):
             Twist, "/cmd_vel_hrvo", self.hrvo_vel_cb, 10
         )
 
+        self.goal_subs = self.create_subscription(
+            PoseStamped, "/goal_pose", self.global_goal_callback, 5
+        )
+
         #! publishers
         self.velocity_pub = self.create_publisher(Twist, self.cmd_vel_topic, 10)
 
@@ -167,14 +172,37 @@ class ProactiveSocialMotionModelDriveNode(Node):
             Point, self.current_goal_topic, 10
         )
 
-        self.goal_achieved_pub = self.create_publisher(Bool, "/goal_achieved", 10)
+        self.goal_achieved_pub = self.create_publisher(Bool, "/goal_reached", 10)
+
+    def global_goal_callback(self, msg):
+        self.goal = msg
 
     def global_plan_callback(self, msg: Path2D):
         self.waypoints = []
-        for pose in msg.waypoints:
-            self.waypoints.append([pose.x, pose.y])
+        if len(msg.waypoints) > 1:
 
-        self.get_logger().info("received_path")
+            got_waypoints = msg.waypoints
+
+            got_waypoints.reverse()
+
+            for pos in got_waypoints:
+                if (
+                    math.sqrt(
+                        (pos.x - self.robot_position[0]) ** 2
+                        + (pos.y - self.robot_position[1]) ** 2
+                    )
+                    > 0.4
+                ):
+                    self.waypoints.append([pos.x, pos.y])
+                else:
+                    break
+
+            self.waypoints.reverse()
+
+        elif len(msg.waypoints) == 1:
+            self.waypoints.append([msg.waypoints[-1].x, msg.waypoints[-1].y])
+
+        # self.get_logger().info("received_path")
         self.obstacle_map_processing()
 
     # * callbacks
@@ -194,12 +222,12 @@ class ProactiveSocialMotionModelDriveNode(Node):
             if len(self.waypoints) > 0:
                 if (
                     math.sqrt(
-                        math.pow(self.robot_position[0] - self.waypoints[-1][0], 2)
+                        math.pow(self.robot_position[0] - self.goal.pose.position.x, 2)
                     )
                     + math.sqrt(
-                        math.pow(self.robot_position[1] - self.waypoints[-1][1], 2)
+                        math.pow(self.robot_position[1] - self.goal.pose.position.y, 2)
                     )
-                    < 0.25
+                    < 0.5
                 ):
                     reached_goal = Bool()
                     reached_goal.data = True
@@ -210,7 +238,7 @@ class ProactiveSocialMotionModelDriveNode(Node):
                     self.velocity_pub.publish(vel)
 
                 else:
-                    self.get_logger().info("Starting social drive")
+                    # self.get_logger().info("Starting social drive")
 
                     while not len(self.waypoints) <= 1:
                         if (
@@ -341,7 +369,7 @@ class ProactiveSocialMotionModelDriveNode(Node):
                     cmd_vel_msg.linear.x = vx
                     cmd_vel_msg.angular.z = w
 
-                    self.get_logger().info("SENDING VELOCITY")
+                    # self.get_logger().info("SENDING VELOCITY")
 
                     self.velocity_pub.publish(cmd_vel_msg)
 
@@ -423,7 +451,8 @@ class ProactiveSocialMotionModelDriveNode(Node):
         """
         callback para obtener los datos de grupos de agentes
         """
-        self.agents_groups_register = data
+        # self.agents_groups_register = data
+        pass
 
     # * force functions
     """
