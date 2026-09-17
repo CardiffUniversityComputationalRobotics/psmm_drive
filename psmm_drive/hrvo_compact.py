@@ -4,10 +4,10 @@ from rclpy.node import Node
 from pedsim_msgs.msg import AgentStates
 from nav_msgs.msg import Odometry, OccupancyGrid
 from geometry_msgs.msg import Twist, Point
+from std_msgs.msg import Bool
 import numpy as np
 import math
 from math import sqrt, cos, sin, atan2, asin, pi as PI
-from tf_transformations import euler_from_quaternion
 
 
 def distance(pose1, pose2):
@@ -166,6 +166,9 @@ class VODrive(Node):
         ).value
         self.laser_topic = self.declare_parameter("laser_topic", "/scan_filtered").value
         self.map_topic = self.declare_parameter("map_topic", "/projected_map").value
+        self.goal_available_topic = self.declare_parameter(
+            "goal_available_topic", "/goal_available"
+        ).value
 
         #! subcribers
         self.goal_location_sub = self.create_subscription(
@@ -184,6 +187,10 @@ class VODrive(Node):
             OccupancyGrid, self.map_topic, self.obstacle_map_processing, 10
         )
 
+        self.goal_available_subs = self.create_subscription(
+            Bool, self.goal_available_topic, self.goal_available_callback, 10
+        )
+
         #! publishers
         self.vo_cmd_vel_pub = self.create_publisher(Twist, "/cmd_vel_hrvo", 10)
 
@@ -195,7 +202,16 @@ class VODrive(Node):
     def goal_callback(self, goal: Point):
         self.goal[0] = goal.x
         self.goal[1] = goal.y
-        self.goal_available = True
+
+    def publish_stop_velocity(self):
+        self.vo_velocity_val = [0, 0]
+        self.vo_twist_msg = Twist()
+        self.vo_cmd_vel_pub.publish(self.vo_twist_msg)
+
+    def goal_available_callback(self, msg: Bool):
+        self.goal_available = msg.data
+        if not self.goal_available:
+            self.publish_stop_velocity()
 
     def agents_state_callback(self, data: AgentStates):
         """
@@ -325,29 +341,11 @@ class VODrive(Node):
 
     def run(self):
         while rclpy.ok():
-            self.vo_velocity_val = self.vo_velocity()
-            # print("===================")
-            # print("hrvo: ", self.vo_velocity_val)
-            # print("goal:", self.goal)
 
-            # orientation_list = [
-            #     self.robot_orientation[0],
-            #     self.robot_orientation[1],
-            #     self.robot_orientation[2],
-            #     self.robot_orientation[3],
-            # ]
-            # (roll, pitch, yaw) = euler_from_quaternion(orientation_list)
-
-            # angle = wrapAngle(
-            #     math.atan2(self.vo_velocity_val[1], self.vo_velocity_val[0]) - yaw
-            # )
-            # print("angle: ", angle)
-            # print("velocity: ", self.vo_velocity_val)
-            self.vo_twist_msg.linear.x = self.vo_velocity_val[0]
-            self.vo_twist_msg.linear.y = self.vo_velocity_val[1]
-            # self.vo_twist_msg.angular.z = 0.5*(angle/3.14)
-            # self.vo_twist_msg.angular.z = 0.1
             if self.goal_available:
+                self.vo_velocity_val = self.vo_velocity()
+                self.vo_twist_msg.linear.x = self.vo_velocity_val[0]
+                self.vo_twist_msg.linear.y = self.vo_velocity_val[1]
                 self.vo_cmd_vel_pub.publish(self.vo_twist_msg)
             rclpy.spin_once(self)
 

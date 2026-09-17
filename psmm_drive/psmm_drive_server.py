@@ -21,6 +21,7 @@ class ProactiveSocialMotionModelDriveNode(Node):
         # base variables
         self.goal_set = False
         self.goal = None
+        self.goal_available = False
 
         self.xy_tolerance = 1
 
@@ -74,6 +75,7 @@ class ProactiveSocialMotionModelDriveNode(Node):
         self.declare_parameter("laser_topic", "/scan_filtered")
         self.declare_parameter("map_topic", "/projected_map")
         self.declare_parameter("current_goal_topic", "/psmm_current_goal")
+        self.declare_parameter("goal_available_topic", "/goal_available")
 
         # constants for forces and other parameters
         # Retrieve parameters
@@ -121,6 +123,9 @@ class ProactiveSocialMotionModelDriveNode(Node):
         self.current_goal_topic = (
             self.get_parameter("current_goal_topic").get_parameter_value().string_value
         )
+        self.goal_available_topic = (
+            self.get_parameter("goal_available_topic").get_parameter_value().string_value
+        )
 
         #! subscribers
         self.agents_states_subs = self.create_subscription(
@@ -165,6 +170,10 @@ class ProactiveSocialMotionModelDriveNode(Node):
             PoseStamped, "/goal_pose", self.global_goal_callback, 5
         )
 
+        self.goal_available_subs = self.create_subscription(
+            Bool, self.goal_available_topic, self.goal_available_callback, 10
+        )
+
         #! publishers
         self.velocity_pub = self.create_publisher(Twist, self.cmd_vel_topic, 10)
 
@@ -176,6 +185,16 @@ class ProactiveSocialMotionModelDriveNode(Node):
 
     def global_goal_callback(self, msg):
         self.goal = msg
+
+    def publish_stop_velocity(self):
+        self.robot_current_vel = np.array([0, 0, 0], np.dtype("float64"))
+        self.hrvo_vel = np.array([0, 0, 0], np.dtype("float64"))
+        self.velocity_pub.publish(Twist())
+
+    def goal_available_callback(self, msg: Bool):
+        self.goal_available = msg.data
+        if not self.goal_available:
+            self.publish_stop_velocity()
 
     def global_plan_callback(self, msg: Path2D):
         self.waypoints = []
@@ -219,6 +238,9 @@ class ProactiveSocialMotionModelDriveNode(Node):
         while rclpy.ok():
 
             rclpy.spin_once(self)
+            if not self.goal_available:
+                continue
+
             if len(self.waypoints) > 0:
                 if (
                     math.sqrt(
@@ -227,7 +249,7 @@ class ProactiveSocialMotionModelDriveNode(Node):
                     + math.sqrt(
                         math.pow(self.robot_position[1] - self.goal.pose.position.y, 2)
                     )
-                    < 0.5
+                    < 0.2
                 ):
                     reached_goal = Bool()
                     reached_goal.data = True
