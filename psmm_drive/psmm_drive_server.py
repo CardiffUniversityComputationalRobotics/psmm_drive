@@ -1,16 +1,38 @@
+import os
 import rclpy
 from rclpy.node import Node
 
 from pedsim_msgs.msg import AgentStates, AgentGroups
 from nav_msgs.msg import Odometry, OccupancyGrid, Path
 from sensor_msgs.msg import LaserScan
-from geometry_msgs.msg import Twist, Point, PoseStamped
+from geometry_msgs.msg import Twist, TwistStamped, Point, PoseStamped
 from std_msgs.msg import Bool
 from esc_move_base_msgs.msg import Path2D
 
 import numpy as np
 import math
 from tf_transformations import euler_from_quaternion
+
+
+class CmdVelPublisher:
+    """publish(Twist) sends TwistStamped, except on Humble where it sends plain Twist.
+
+    Jazzy's ros_gz bridges, ros2_control and Nav2 expect stamped velocity commands.
+    """
+
+    def __init__(self, node, topic, qos):
+        self._node = node
+        self._stamped = os.environ.get("ROS_DISTRO") != "humble"
+        msg_type = TwistStamped if self._stamped else Twist
+        self._pub = node.create_publisher(msg_type, topic, qos)
+
+    def publish(self, twist):
+        if self._stamped:
+            msg = TwistStamped()
+            msg.header.stamp = self._node.get_clock().now().to_msg()
+            msg.twist = twist
+            twist = msg
+        self._pub.publish(twist)
 
 
 class ProactiveSocialMotionModelDriveNode(Node):
@@ -175,7 +197,7 @@ class ProactiveSocialMotionModelDriveNode(Node):
         )
 
         #! publishers
-        self.velocity_pub = self.create_publisher(Twist, self.cmd_vel_topic, 10)
+        self.velocity_pub = CmdVelPublisher(self, self.cmd_vel_topic, 10)
 
         self.current_goal_pub = self.create_publisher(
             Point, self.current_goal_topic, 10
